@@ -28,6 +28,7 @@ import org.opendaylight.yangtools.yang.model.api.SchemaPath;
 import org.opendaylight.yangtools.yang.model.api.UnknownSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.UsesNode;
 import org.opendaylight.yangtools.yang.model.api.meta.EffectiveStatement;
+import org.opendaylight.yangtools.yang.model.api.stmt.GroupingEffectiveStatement;
 import org.opendaylight.yangtools.yang.model.api.stmt.GroupingStatement;
 import org.opendaylight.yangtools.yang.model.api.stmt.SchemaNodeIdentifier;
 import org.opendaylight.yangtools.yang.model.api.stmt.UsesEffectiveStatement;
@@ -43,16 +44,16 @@ final class UsesEffectiveStatementImpl extends AbstractEffectiveDocumentedNode<Q
         implements UsesEffectiveStatement, UsesNode {
     private final @NonNull SchemaPath groupingPath;
     private final boolean addedByUses;
-    private final @NonNull Map<SchemaPath, SchemaNode> refines;
-    private final @NonNull Set<AugmentationSchemaNode> augmentations;
-    private final @NonNull List<UnknownSchemaNode> unknownNodes;
+    private final @NonNull ImmutableMap<SchemaPath, SchemaNode> refines;
+    private final @NonNull ImmutableSet<AugmentationSchemaNode> augmentations;
+    private final @NonNull ImmutableList<UnknownSchemaNode> unknownNodes;
     private final @Nullable RevisionAwareXPath whenCondition;
 
     UsesEffectiveStatementImpl(final StmtContext<QName, UsesStatement, EffectiveStatement<QName, UsesStatement>> ctx) {
         super(ctx);
 
         // initGroupingPath
-        final StmtContext<?, GroupingStatement, EffectiveStatement<QName, GroupingStatement>> grpCtx =
+        final StmtContext<?, GroupingStatement, GroupingEffectiveStatement> grpCtx =
                 ctx.getFromNamespace(GroupingNamespace.class, ctx.coerceStatementArgument());
         this.groupingPath = grpCtx.getSchemaPath().get();
 

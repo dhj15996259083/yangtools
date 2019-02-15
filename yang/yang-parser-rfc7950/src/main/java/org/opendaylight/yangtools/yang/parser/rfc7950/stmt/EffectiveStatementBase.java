@@ -14,12 +14,11 @@ import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
-import javax.annotation.Nullable;
 import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.yangtools.yang.model.api.SchemaNode;
 import org.opendaylight.yangtools.yang.model.api.YangStmtMapping;
 import org.opendaylight.yangtools.yang.model.api.meta.DeclaredStatement;
@@ -29,7 +28,7 @@ import org.opendaylight.yangtools.yang.parser.spi.meta.StmtContext;
 import org.opendaylight.yangtools.yang.parser.stmt.reactor.StatementContextBase;
 
 public abstract class EffectiveStatementBase<A, D extends DeclaredStatement<A>> implements EffectiveStatement<A, D> {
-    private final @NonNull List<? extends EffectiveStatement<?, ?>> substatements;
+    private final @NonNull ImmutableList<? extends EffectiveStatement<?, ?>> substatements;
 
     /**
      * Constructor.
@@ -119,7 +118,7 @@ public abstract class EffectiveStatementBase<A, D extends DeclaredStatement<A>> 
         return Collection.class.cast(Collections2.filter(substatements, type::isInstance));
     }
 
-    @Nullable protected final <T> T firstSubstatementOfType(final Class<T> type) {
+    protected final <T> @Nullable T firstSubstatementOfType(final Class<T> type) {
         return substatements.stream().filter(type::isInstance).findFirst().map(type::cast).orElse(null);
     }
 

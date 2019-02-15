@@ -5,7 +5,6 @@
  * terms of the Eclipse Public License v1.0 which accompanies this distribution,
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
-
 package org.opendaylight.yangtools.yang.data.codec.xml;
 
 import static org.hamcrest.CoreMatchers.containsString;
@@ -15,17 +14,15 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.URI;
-import java.util.AbstractMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
-import org.custommonkey.xmlunit.Diff;
-import org.custommonkey.xmlunit.XMLUnit;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -44,11 +41,12 @@ import org.opendaylight.yangtools.yang.model.api.type.LeafrefTypeDefinition;
 import org.opendaylight.yangtools.yang.model.api.type.StringTypeDefinition;
 import org.opendaylight.yangtools.yang.model.util.SchemaContextUtil;
 import org.opendaylight.yangtools.yang.test.util.YangParserTestUtils;
-import org.w3c.dom.Document;
 
 public class XmlStreamUtilsTest {
-
-    public static final XMLOutputFactory XML_OUTPUT_FACTORY = XMLOutputFactory.newFactory();
+    @FunctionalInterface
+    interface XMLStreamWriterConsumer {
+        void accept(XMLStreamWriter writer) throws XMLStreamException;
+    }
 
     private static SchemaContext schemaContext;
     private static Module leafRefModule;
@@ -69,66 +67,42 @@ public class XmlStreamUtilsTest {
     }
 
     @Test
-    public void testWriteAttribute() throws Exception {
-        final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final XMLStreamWriter writer = XML_OUTPUT_FACTORY.createXMLStreamWriter(out);
-        writer.writeStartElement("element");
-
-        QName name = getAttrQName("namespace", "2012-12-12", "attr", Optional.of("prefix"));
-        final Map.Entry<QName, String> attributeEntry = new AbstractMap.SimpleEntry<>(name, "value");
-
-        name = getAttrQName("namespace2", "2012-12-12", "attr", Optional.empty());
-        final Map.Entry<QName, String> attributeEntryNoPrefix = new AbstractMap.SimpleEntry<>(name, "value");
-
-        final RandomPrefix randomPrefix = new RandomPrefix(null);
-        XMLStreamWriterUtils.writeAttribute(writer, attributeEntry, randomPrefix);
-        XMLStreamWriterUtils.writeAttribute(writer, attributeEntryNoPrefix, randomPrefix);
-
-        writer.writeEndElement();
-        writer.close();
-        out.close();
-
-        final String xmlAsString = new String(out.toByteArray());
-
-        final Map<String, String> mappedPrefixes = mapPrefixed(randomPrefix.getPrefixes());
-        assertEquals(2, mappedPrefixes.size());
-        final String randomPrefixValue = mappedPrefixes.get("namespace2");
-
-        final String expectedXmlAsString = "<element xmlns:a=\"namespace\" a:attr=\"value\" xmlns:" + randomPrefixValue
-                + "=\"namespace2\" " + randomPrefixValue + ":attr=\"value\"></element>";
-
-        XMLUnit.setIgnoreAttributeOrder(true);
-        final Document control = XMLUnit.buildControlDocument(expectedXmlAsString);
-        final Document test = XMLUnit.buildTestDocument(xmlAsString);
-        final Diff diff = XMLUnit.compareXML(control, test);
-
-        final boolean identical = diff.identical();
-        assertTrue("Xml differs: " + diff.toString(), identical);
-    }
-
-    @Test
     public void testWriteIdentityRef() throws Exception {
-        final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final XMLStreamWriter writer = XML_OUTPUT_FACTORY.createXMLStreamWriter(out);
-
-        writer.writeStartElement("element");
         final QNameModule parent = QNameModule.create(URI.create("parent:uri"), Revision.of("2000-01-01"));
-        XMLStreamWriterUtils.write(writer, null, QName.create(parent, "identity"), parent);
-        writer.writeEndElement();
 
-        writer.writeStartElement("elementDifferent");
-        XMLStreamWriterUtils.write(writer, null, QName.create("different:namespace", "identity"), parent);
-        writer.writeEndElement();
+        String xmlAsString = createXml(writer -> {
+            writer.writeStartElement("element");
+            final StreamWriterFacade facade = new StreamWriterFacade(writer);
+            XMLStreamWriterUtils.write(facade, null, QName.create(parent, "identity"), parent);
+            facade.flush();
+            writer.writeEndElement();
+        });
 
-        writer.close();
-        out.close();
-
-        final String xmlAsString = new String(out.toByteArray()).replaceAll("\\s*", "");
         assertThat(xmlAsString, containsString("element>identity"));
+
+        xmlAsString = createXml(writer -> {
+            writer.writeStartElement("elementDifferent");
+            final StreamWriterFacade facade = new StreamWriterFacade(writer);
+            XMLStreamWriterUtils.write(facade, null, QName.create("different:namespace", "identity"), parent);
+            facade.flush();
+            writer.writeEndElement();
+        });
 
         final Pattern prefixedIdentityPattern = Pattern.compile(".*\"different:namespace\">(.*):identity.*");
         final Matcher matcher = prefixedIdentityPattern.matcher(xmlAsString);
         assertTrue("Xml: " + xmlAsString + " should match: " + prefixedIdentityPattern, matcher.matches());
+    }
+
+    private static String createXml(final XMLStreamWriterConsumer consumer) throws XMLStreamException, IOException {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final XMLStreamWriter writer = TestFactories.DEFAULT_OUTPUT_FACTORY.createXMLStreamWriter(out);
+
+        consumer.accept(writer);
+
+        writer.close();
+        out.close();
+
+        return new String(out.toByteArray()).replaceAll("\\s*", "");
     }
 
     /**

@@ -7,67 +7,71 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
 
 import java.util.Optional;
+import org.eclipse.jdt.annotation.NonNull;
+import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifierWithPredicates;
 import org.opendaylight.yangtools.yang.data.api.schema.MapEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTreeConfiguration;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.TreeNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.Version;
-import org.opendaylight.yangtools.yang.data.impl.schema.builder.api.DataContainerNodeBuilder;
 import org.opendaylight.yangtools.yang.data.impl.schema.builder.impl.ImmutableMapEntryNodeBuilder;
 import org.opendaylight.yangtools.yang.model.api.ListSchemaNode;
 
-final class ListEntryModificationStrategy extends AbstractDataNodeContainerModificationStrategy<ListSchemaNode> {
-    private final MandatoryLeafEnforcer enforcer;
+class ListEntryModificationStrategy extends DataNodeContainerModificationStrategy<ListSchemaNode> {
+    private static final class EnforcingMandatory extends ListEntryModificationStrategy {
+        private final MandatoryLeafEnforcer enforcer;
 
-    ListEntryModificationStrategy(final ListSchemaNode schema, final DataTreeConfiguration treeConfig) {
-        super(schema, MapEntryNode.class, treeConfig);
-        enforcer = MandatoryLeafEnforcer.forContainer(schema, treeConfig);
-    }
+        EnforcingMandatory(final ListSchemaNode schemaNode, final DataTreeConfiguration treeConfig,
+                final MandatoryLeafEnforcer enforcer) {
+            super(schemaNode, treeConfig);
+            this.enforcer = requireNonNull(enforcer);
+        }
 
-    @Override
-    void verifyStructure(final NormalizedNode<?, ?> writtenValue, final boolean verifyChildren) {
-        super.verifyStructure(writtenValue, verifyChildren);
-        if (verifyChildren) {
+        @Override
+        void mandatoryVerifyValueChildren(final NormalizedNode<?, ?> writtenValue) {
             enforcer.enforceOnData(writtenValue);
+        }
+
+        @Override
+        protected TreeNode applyMerge(final ModifiedNode modification, final TreeNode currentMeta,
+                final Version version) {
+            final TreeNode ret = super.applyMerge(modification, currentMeta, version);
+            enforcer.enforceOnTreeNode(ret);
+            return ret;
+        }
+
+        @Override
+        protected TreeNode applyWrite(final ModifiedNode modification, final NormalizedNode<?, ?> newValue,
+                final Optional<TreeNode> currentMeta, final Version version) {
+            final TreeNode ret = super.applyWrite(modification, newValue, currentMeta, version);
+            enforcer.enforceOnTreeNode(ret);
+            return ret;
+        }
+
+        @Override
+        protected TreeNode applyTouch(final ModifiedNode modification, final TreeNode currentMeta,
+                final Version version) {
+            final TreeNode ret = super.applyTouch(modification, currentMeta, version);
+            enforcer.enforceOnTreeNode(ret);
+            return ret;
         }
     }
 
-    @Override
-    protected TreeNode applyMerge(final ModifiedNode modification, final TreeNode currentMeta, final Version version) {
-        final TreeNode ret = super.applyMerge(modification, currentMeta, version);
-        enforcer.enforceOnTreeNode(ret);
-        return ret;
+    private static final NormalizedNodeContainerSupport<NodeIdentifierWithPredicates, MapEntryNode> SUPPORT =
+            new NormalizedNodeContainerSupport<>(MapEntryNode.class, ImmutableMapEntryNodeBuilder::create,
+                    ImmutableMapEntryNodeBuilder::create);
+
+    ListEntryModificationStrategy(final ListSchemaNode schema, final DataTreeConfiguration treeConfig) {
+        super(SUPPORT, schema, treeConfig);
     }
 
-    @Override
-    protected TreeNode applyWrite(final ModifiedNode modification, final Optional<TreeNode> currentMeta,
-            final Version version) {
-        final TreeNode ret = super.applyWrite(modification, currentMeta, version);
-        enforcer.enforceOnTreeNode(ret);
-        return ret;
-    }
-
-    @Override
-    protected TreeNode applyTouch(final ModifiedNode modification, final TreeNode currentMeta, final Version version) {
-        final TreeNode ret = super.applyTouch(modification, currentMeta, version);
-        enforcer.enforceOnTreeNode(ret);
-        return ret;
-    }
-
-    @Override
-    @SuppressWarnings("rawtypes")
-    protected DataContainerNodeBuilder createBuilder(final NormalizedNode<?, ?> original) {
-        checkArgument(original instanceof MapEntryNode);
-        return ImmutableMapEntryNodeBuilder.create((MapEntryNode) original);
-    }
-
-    @Override
-    protected NormalizedNode<?, ?> createEmptyValue(final NormalizedNode<?, ?> original) {
-        checkArgument(original instanceof MapEntryNode);
-        return ImmutableMapEntryNodeBuilder.create().withNodeIdentifier(((MapEntryNode) original).getIdentifier())
-                .build();
+    static @NonNull ListEntryModificationStrategy of(final ListSchemaNode schema,
+            final DataTreeConfiguration treeConfig) {
+        final Optional<MandatoryLeafEnforcer> enforcer = MandatoryLeafEnforcer.forContainer(schema, treeConfig);
+        return enforcer.isPresent() ? new EnforcingMandatory(schema, treeConfig, enforcer.get())
+                : new ListEntryModificationStrategy(schema, treeConfig);
     }
 }

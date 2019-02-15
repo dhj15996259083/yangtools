@@ -7,36 +7,78 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
 
-import com.google.common.base.Preconditions;
+import java.util.Optional;
+import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.data.api.schema.ContainerNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTreeConfiguration;
-import org.opendaylight.yangtools.yang.data.impl.schema.builder.api.DataContainerNodeBuilder;
+import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.TreeNode;
+import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.Version;
 import org.opendaylight.yangtools.yang.data.impl.schema.builder.impl.ImmutableContainerNodeBuilder;
 import org.opendaylight.yangtools.yang.model.api.ContainerSchemaNode;
 
 /**
- * General container modification strategy. Used by {@link PresenceContainerModificationStrategy} via subclassing
- * and by {@link StructuralContainerModificationStrategy} as a delegate.
+ * General container modification strategy. This is used by {@link EnforcingMandatory} in case of presence containers
+ * with mandatory nodes, as it needs to tap into {@link SchemaAwareApplyOperation}'s operations, or subclassed
+ * for the purposes of {@link StructuralContainerModificationStrategy}'s automatic lifecycle.
  */
-class ContainerModificationStrategy extends AbstractDataNodeContainerModificationStrategy<ContainerSchemaNode> {
+class ContainerModificationStrategy extends DataNodeContainerModificationStrategy<ContainerSchemaNode> {
+    private static final class EnforcingMandatory extends ContainerModificationStrategy {
+        private final MandatoryLeafEnforcer enforcer;
+
+        EnforcingMandatory(final ContainerSchemaNode schemaNode, final DataTreeConfiguration treeConfig,
+                final MandatoryLeafEnforcer enforcer) {
+            super(schemaNode, treeConfig);
+            this.enforcer = requireNonNull(enforcer);
+        }
+
+        @Override
+        void mandatoryVerifyValueChildren(final NormalizedNode<?, ?> writtenValue) {
+            enforcer.enforceOnData(writtenValue);
+        }
+
+        @Override
+        protected TreeNode applyMerge(final ModifiedNode modification, final TreeNode currentMeta,
+                final Version version) {
+            final TreeNode ret = super.applyMerge(modification, currentMeta, version);
+            enforcer.enforceOnTreeNode(ret);
+            return ret;
+        }
+
+        @Override
+        protected TreeNode applyWrite(final ModifiedNode modification, final NormalizedNode<?, ?> newValue,
+                final Optional<TreeNode> currentMeta, final Version version) {
+            final TreeNode ret = super.applyWrite(modification, newValue, currentMeta, version);
+            enforcer.enforceOnTreeNode(ret);
+            return ret;
+        }
+
+        @Override
+        protected TreeNode applyTouch(final ModifiedNode modification, final TreeNode currentMeta,
+                final Version version) {
+            final TreeNode ret = super.applyTouch(modification, currentMeta, version);
+            enforcer.enforceOnTreeNode(ret);
+            return ret;
+        }
+    }
+
+    private static final NormalizedNodeContainerSupport<NodeIdentifier, ContainerNode> SUPPORT =
+            new NormalizedNodeContainerSupport<>(ContainerNode.class, ImmutableContainerNodeBuilder::create,
+                    ImmutableContainerNodeBuilder::create);
+
     ContainerModificationStrategy(final ContainerSchemaNode schemaNode, final DataTreeConfiguration treeConfig) {
-        super(schemaNode, ContainerNode.class, treeConfig);
+        super(SUPPORT, schemaNode, treeConfig);
     }
 
-    @Override
-    @SuppressWarnings("rawtypes")
-    protected final DataContainerNodeBuilder createBuilder(final NormalizedNode<?, ?> original) {
-        checkArgument(original instanceof ContainerNode);
-        return ImmutableContainerNodeBuilder.create((ContainerNode) original);
-    }
+    static ModificationApplyOperation of(final ContainerSchemaNode schema, final DataTreeConfiguration treeConfig) {
+        if (schema.isPresenceContainer()) {
+            final Optional<MandatoryLeafEnforcer> enforcer = MandatoryLeafEnforcer.forContainer(schema, treeConfig);
+            return enforcer.isPresent() ? new EnforcingMandatory(schema, treeConfig, enforcer.get())
+                    : new ContainerModificationStrategy(schema, treeConfig);
+        }
 
-    @Override
-    protected NormalizedNode<?, ?> createEmptyValue(final NormalizedNode<?, ?> original) {
-        Preconditions.checkArgument(original instanceof ContainerNode);
-        return ImmutableContainerNodeBuilder.create().withNodeIdentifier(((ContainerNode) original).getIdentifier())
-                .build();
+        return new StructuralContainerModificationStrategy(schema, treeConfig);
     }
 }

@@ -7,7 +7,6 @@
  */
 package org.opendaylight.yangtools.yang.model.util.type;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import java.util.Collection;
 import java.util.List;
@@ -17,12 +16,12 @@ import org.opendaylight.yangtools.yang.model.api.UnknownSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.type.BitsTypeDefinition;
 
 final class RestrictedBitsType extends AbstractRestrictedType<BitsTypeDefinition> implements BitsTypeDefinition {
-    private final @NonNull List<Bit> bits;
+    private final @NonNull ImmutableList<Bit> bits;
 
     RestrictedBitsType(final BitsTypeDefinition baseType, final SchemaPath path,
             final Collection<UnknownSchemaNode> unknownSchemaNodes, final Collection<Bit> bits) {
         super(baseType, path, unknownSchemaNodes);
-        this.bits = ImmutableList.copyOf(Preconditions.checkNotNull(bits));
+        this.bits = ImmutableList.copyOf(bits);
     }
 
     @Override

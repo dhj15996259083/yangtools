@@ -7,11 +7,14 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import javax.annotation.Nonnull;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
+import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifierWithPredicates;
+import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.PathArgument;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNodes;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTree;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTreeCandidate;
@@ -22,6 +25,7 @@ import org.opendaylight.yangtools.yang.data.util.DataSchemaContextTree;
 import org.opendaylight.yangtools.yang.model.api.ContainerSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.DataNodeContainer;
 import org.opendaylight.yangtools.yang.model.api.DataSchemaNode;
+import org.opendaylight.yangtools.yang.model.api.ListSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.SchemaContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +48,7 @@ final class InMemoryDataTree extends AbstractDataTreeTip implements DataTree {
 
     InMemoryDataTree(final TreeNode rootNode, final DataTreeConfiguration treeConfig,
         final SchemaContext schemaContext) {
-        this.treeConfig = Preconditions.checkNotNull(treeConfig, "treeConfig");
+        this.treeConfig = requireNonNull(treeConfig, "treeConfig");
         maskMandatory = true;
         state = DataTreeState.createInitial(rootNode);
         if (schemaContext != null) {
@@ -54,15 +58,22 @@ final class InMemoryDataTree extends AbstractDataTreeTip implements DataTree {
 
     InMemoryDataTree(final TreeNode rootNode, final DataTreeConfiguration treeConfig,
             final SchemaContext schemaContext, final DataSchemaNode rootSchemaNode, final boolean maskMandatory) {
-        this.treeConfig = Preconditions.checkNotNull(treeConfig, "treeConfig");
+        this.treeConfig = requireNonNull(treeConfig, "treeConfig");
         this.maskMandatory = maskMandatory;
 
         state = DataTreeState.createInitial(rootNode).withSchemaContext(schemaContext, getOperation(rootSchemaNode));
     }
 
     private ModificationApplyOperation getOperation(final DataSchemaNode rootSchemaNode) {
-        if (maskMandatory && rootSchemaNode instanceof ContainerSchemaNode) {
+        if (rootSchemaNode instanceof ContainerSchemaNode && maskMandatory) {
             return new ContainerModificationStrategy((ContainerSchemaNode) rootSchemaNode, treeConfig);
+        }
+        if (rootSchemaNode instanceof ListSchemaNode) {
+            final PathArgument arg = treeConfig.getRootPath().getLastPathArgument();
+            if (arg instanceof NodeIdentifierWithPredicates) {
+                return maskMandatory ? new ListEntryModificationStrategy((ListSchemaNode) rootSchemaNode, treeConfig)
+                        : ListEntryModificationStrategy.of((ListSchemaNode) rootSchemaNode, treeConfig);
+            }
         }
 
         return SchemaAwareApplyOperation.from(rootSchemaNode, treeConfig);
@@ -74,7 +85,7 @@ final class InMemoryDataTree extends AbstractDataTreeTip implements DataTree {
      */
     @Override
     public synchronized void setSchemaContext(final SchemaContext newSchemaContext) {
-        Preconditions.checkNotNull(newSchemaContext);
+        requireNonNull(newSchemaContext);
 
         LOG.debug("Following schema contexts will be attempted {}", newSchemaContext);
 
@@ -110,7 +121,7 @@ final class InMemoryDataTree extends AbstractDataTreeTip implements DataTree {
         if (candidate instanceof NoopDataTreeCandidate) {
             return;
         }
-        Preconditions.checkArgument(candidate instanceof InMemoryDataTreeCandidate, "Invalid candidate class %s",
+        checkArgument(candidate instanceof InMemoryDataTreeCandidate, "Invalid candidate class %s",
             candidate.getClass());
         final InMemoryDataTreeCandidate c = (InMemoryDataTreeCandidate)candidate;
 
@@ -158,7 +169,6 @@ final class InMemoryDataTree extends AbstractDataTreeTip implements DataTree {
     }
 
     @Override
-    @Nonnull
     protected TreeNode getTipRoot() {
         return state.getRoot();
     }

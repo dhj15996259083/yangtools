@@ -7,8 +7,6 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
-import static com.google.common.base.Preconditions.checkArgument;
-
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicates;
 import com.google.common.base.Verify;
@@ -21,6 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.AugmentationIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.PathArgument;
@@ -29,26 +28,29 @@ import org.opendaylight.yangtools.yang.data.api.schema.DataContainerChild;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNodes;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTreeConfiguration;
-import org.opendaylight.yangtools.yang.data.api.schema.tree.DataValidationFailedException;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.TreeNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.Version;
 import org.opendaylight.yangtools.yang.data.impl.schema.ImmutableNodes;
-import org.opendaylight.yangtools.yang.data.impl.schema.builder.api.DataContainerNodeBuilder;
 import org.opendaylight.yangtools.yang.data.impl.schema.builder.impl.ImmutableChoiceNodeBuilder;
+import org.opendaylight.yangtools.yang.data.impl.schema.tree.AbstractNodeContainerModificationStrategy.Visible;
 import org.opendaylight.yangtools.yang.model.api.AugmentationSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.CaseSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.ChoiceSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.DataSchemaNode;
 
-final class ChoiceModificationStrategy extends AbstractNodeContainerModificationStrategy {
-    private final Map<PathArgument, ModificationApplyOperation> childNodes;
+final class ChoiceModificationStrategy extends Visible<ChoiceSchemaNode> {
+    private static final NormalizedNodeContainerSupport<NodeIdentifier, ChoiceNode> SUPPORT =
+            new NormalizedNodeContainerSupport<>(ChoiceNode.class, ImmutableChoiceNodeBuilder::create,
+                    ImmutableChoiceNodeBuilder::create);
+
+    private final ImmutableMap<PathArgument, ModificationApplyOperation> childNodes;
     // FIXME: enforce leaves not coming from two case statements at the same time
-    private final Map<CaseEnforcer, Collection<CaseEnforcer>> exclusions;
-    private final Map<PathArgument, CaseEnforcer> caseEnforcers;
-    private final ChoiceNode emptyNode;
+    private final ImmutableMap<CaseEnforcer, Collection<CaseEnforcer>> exclusions;
+    private final ImmutableMap<PathArgument, CaseEnforcer> caseEnforcers;
+    private final @NonNull ChoiceNode emptyNode;
 
     ChoiceModificationStrategy(final ChoiceSchemaNode schema, final DataTreeConfiguration treeConfig) {
-        super(ChoiceNode.class, treeConfig);
+        super(SUPPORT, treeConfig, schema);
 
         final Builder<PathArgument, ModificationApplyOperation> childBuilder = ImmutableMap.builder();
         final Builder<PathArgument, CaseEnforcer> enforcerBuilder = ImmutableMap.builder();
@@ -78,18 +80,16 @@ final class ChoiceModificationStrategy extends AbstractNodeContainerModification
         emptyNode = ImmutableNodes.choiceNode(schema.getQName());
     }
 
-
     @Override
     Optional<TreeNode> apply(final ModifiedNode modification, final Optional<TreeNode> storeMeta,
             final Version version) {
-        return AutomaticLifecycleMixin.apply(super::apply, emptyNode, modification, storeMeta, version);
+        return AutomaticLifecycleMixin.apply(super::apply, this::applyWrite, emptyNode, modification, storeMeta,
+            version);
     }
 
     @Override
-    void checkApplicable(final ModificationPath path, final NodeModification modification,
-            final Optional<TreeNode> current, final Version version) throws DataValidationFailedException {
-        AutomaticLifecycleMixin.checkApplicable(super::checkApplicable, emptyNode, path, modification, current,
-            version);
+    TreeNode defaultTreeNode() {
+        return defaultTreeNode(emptyNode);
     }
 
     @Override
@@ -98,18 +98,8 @@ final class ChoiceModificationStrategy extends AbstractNodeContainerModification
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
-    protected DataContainerNodeBuilder createBuilder(final NormalizedNode<?, ?> original) {
-        checkArgument(original instanceof ChoiceNode);
-        return ImmutableChoiceNodeBuilder.create((ChoiceNode) original);
-    }
-
-    @Override
-    void verifyStructure(final NormalizedNode<?, ?> writtenValue, final boolean verifyChildren) {
-        if (verifyChildrenStructure() && verifyChildren) {
-            enforceCases(writtenValue);
-        }
-        super.verifyStructure(writtenValue, verifyChildren);
+    void optionalVerifyValueChildren(final NormalizedNode<?, ?> writtenValue) {
+        enforceCases(writtenValue);
     }
 
     private void enforceCases(final TreeNode tree) {
@@ -149,9 +139,9 @@ final class ChoiceModificationStrategy extends AbstractNodeContainerModification
     }
 
     @Override
-    protected TreeNode applyWrite(final ModifiedNode modification, final Optional<TreeNode> currentMeta,
-            final Version version) {
-        final TreeNode ret = super.applyWrite(modification, currentMeta, version);
+    protected TreeNode applyWrite(final ModifiedNode modification,  final NormalizedNode<?, ?> newValue,
+            final Optional<TreeNode> currentMeta, final Version version) {
+        final TreeNode ret = super.applyWrite(modification, newValue, currentMeta, version);
         enforceCases(ret);
         return ret;
     }
@@ -161,12 +151,6 @@ final class ChoiceModificationStrategy extends AbstractNodeContainerModification
         final TreeNode ret = super.applyTouch(modification, currentMeta, version);
         enforceCases(ret);
         return ret;
-    }
-
-    @Override
-    protected NormalizedNode<?, ?> createEmptyValue(final NormalizedNode<?, ?> original) {
-        checkArgument(original instanceof ChoiceNode);
-        return ImmutableChoiceNodeBuilder.create().withNodeIdentifier(((ChoiceNode) original).getIdentifier()).build();
     }
 }
 

@@ -5,19 +5,18 @@
  * terms of the Eclipse Public License v1.0 which accompanies this distribution,
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
-
 package org.opendaylight.yangtools.yang.parser.rfc7950.stmt;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
 import java.util.List;
-import javax.annotation.Nonnull;
 import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.model.api.ExtensionDefinition;
 import org.opendaylight.yangtools.yang.model.api.UnknownSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.meta.EffectiveStatement;
+import org.opendaylight.yangtools.yang.model.api.stmt.ExtensionEffectiveStatement;
 import org.opendaylight.yangtools.yang.model.api.stmt.ExtensionStatement;
 import org.opendaylight.yangtools.yang.model.api.stmt.UnknownStatement;
 import org.opendaylight.yangtools.yang.parser.spi.ExtensionNamespace;
@@ -32,14 +31,14 @@ public abstract class UnknownEffectiveStatementBase<A, D extends UnknownStatemen
     private final boolean addedByAugmentation;
 
     private final ExtensionDefinition extension;
-    private final @NonNull List<UnknownSchemaNode> unknownNodes;
+    private final @NonNull ImmutableList<UnknownSchemaNode> unknownNodes;
     private final QName nodeType;
     private final String nodeParameter;
 
     protected UnknownEffectiveStatementBase(final StmtContext<A, D, ?> ctx) {
         super(ctx);
 
-        final StmtContext<?, ExtensionStatement, EffectiveStatement<QName, ExtensionStatement>> extensionInit =
+        final StmtContext<?, ExtensionStatement, ExtensionEffectiveStatement> extensionInit =
                 ctx.getFromNamespace(ExtensionNamespace.class, ctx.getPublicDefinition().getStatementName());
 
         if (extensionInit == null) {
@@ -102,7 +101,6 @@ public abstract class UnknownEffectiveStatementBase<A, D extends UnknownStatemen
         return extension;
     }
 
-    @Nonnull
     @Override
     public List<UnknownSchemaNode> getUnknownSchemaNodes() {
         return unknownNodes;

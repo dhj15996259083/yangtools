@@ -7,11 +7,11 @@
  */
 package org.opendaylight.yangtools.yang.model.util.type;
 
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.annotations.Beta;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import java.util.Collection;
-import java.util.List;
 import org.opendaylight.yangtools.concepts.Builder;
 import org.opendaylight.yangtools.concepts.Mutable;
 import org.opendaylight.yangtools.yang.model.api.Status;
@@ -28,14 +28,14 @@ public final class EnumPairBuilder implements Builder<EnumPair>, Mutable {
     private final String name;
     private final Integer value;
 
-    private List<UnknownSchemaNode> unknownSchemaNodes = ImmutableList.of();
+    private ImmutableList<UnknownSchemaNode> unknownSchemaNodes = ImmutableList.of();
     private Status status = Status.CURRENT;
     private String description;
     private String reference;
 
     private EnumPairBuilder(final String name, final Integer value) {
-        this.name = Preconditions.checkNotNull(name);
-        this.value = Preconditions.checkNotNull(value);
+        this.name = requireNonNull(name);
+        this.value = requireNonNull(value);
     }
 
     public static EnumPairBuilder create(final String name, final Integer value) {
@@ -53,7 +53,7 @@ public final class EnumPairBuilder implements Builder<EnumPair>, Mutable {
     }
 
     public EnumPairBuilder setStatus(final Status status) {
-        this.status = Preconditions.checkNotNull(status);
+        this.status = requireNonNull(status);
         return this;
     }
 
@@ -71,5 +71,4 @@ public final class EnumPairBuilder implements Builder<EnumPair>, Mutable {
     public EnumPair build() {
         return new EnumPairImpl(name, value, description, reference, status, unknownSchemaNodes);
     }
-
 }

@@ -7,8 +7,10 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.builder.impl;
 
-import com.google.common.base.Preconditions;
+import static java.util.Objects.requireNonNull;
+
 import java.util.Collections;
+import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.NodeIdentifier;
 import org.opendaylight.yangtools.yang.data.api.schema.MapEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.MapNode;
@@ -18,26 +20,25 @@ import org.opendaylight.yangtools.yang.data.impl.schema.builder.impl.valid.DataV
 import org.opendaylight.yangtools.yang.model.api.ListSchemaNode;
 
 public class ImmutableOrderedMapNodeSchemaAwareBuilder extends ImmutableOrderedMapNodeBuilder {
-
     private final ListSchemaNode schema;
 
     protected ImmutableOrderedMapNodeSchemaAwareBuilder(final ListSchemaNode schema) {
-        this.schema = Preconditions.checkNotNull(schema);
+        this.schema = requireNonNull(schema);
         super.withNodeIdentifier(NodeIdentifier.create(schema.getQName()));
     }
 
     protected ImmutableOrderedMapNodeSchemaAwareBuilder(final ListSchemaNode schema,
             final ImmutableOrderedMapNode node) {
         super(node);
-        this.schema = Preconditions.checkNotNull(schema);
+        this.schema = requireNonNull(schema);
         super.withNodeIdentifier(NodeIdentifier.create(schema.getQName()));
     }
 
-    public static CollectionNodeBuilder<MapEntryNode, OrderedMapNode> create(final ListSchemaNode schema) {
+    public static @NonNull CollectionNodeBuilder<MapEntryNode, OrderedMapNode> create(final ListSchemaNode schema) {
         return new ImmutableOrderedMapNodeSchemaAwareBuilder(schema);
     }
 
-    public static CollectionNodeBuilder<MapEntryNode, OrderedMapNode> create(final ListSchemaNode schema,
+    public static @NonNull CollectionNodeBuilder<MapEntryNode, OrderedMapNode> create(final ListSchemaNode schema,
         final MapNode node) {
         if (!(node instanceof ImmutableOrderedMapNode)) {
             throw new UnsupportedOperationException(String.format("Cannot initialize from class %s", node.getClass()));

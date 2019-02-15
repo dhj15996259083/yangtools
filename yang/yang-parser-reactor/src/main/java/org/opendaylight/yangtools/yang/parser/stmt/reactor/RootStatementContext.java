@@ -17,10 +17,11 @@ import com.google.common.collect.ImmutableSet;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
+import java.util.Set;
+import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.yangtools.yang.common.YangVersion;
 import org.opendaylight.yangtools.yang.model.api.SchemaPath;
 import org.opendaylight.yangtools.yang.model.api.meta.DeclaredStatement;
@@ -48,13 +49,13 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
     private final A argument;
 
     private YangVersion rootVersion;
-    private Collection<SourceIdentifier> requiredSources = ImmutableSet.of();
+    private Set<SourceIdentifier> requiredSources = ImmutableSet.of();
     private SourceIdentifier rootIdentifier;
 
     /**
      * References to RootStatementContext of submodules which are included in this source.
      */
-    private Collection<RootStatementContext<?, ?, ?>> includedContexts = ImmutableList.of();
+    private List<RootStatementContext<?, ?, ?>> includedContexts = ImmutableList.of();
 
     RootStatementContext(final SourceSpecificContext sourceContext, final StatementDefinitionContext<A, D, E> def,
         final StatementSourceReference ref, final String rawArgument) {
@@ -93,7 +94,6 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
         return StorageNodeType.ROOT_STATEMENT_LOCAL;
     }
 
-    @Nonnull
     @Override
     public RootStatementContext<?, ?, ?> getRoot() {
         // this as its own root
@@ -109,7 +109,6 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
         return argument;
     }
 
-    @Nonnull
     @Override
     public Optional<SchemaPath> getSchemaPath() {
         return Optional.of(SchemaPath.ROOT);
@@ -138,7 +137,6 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
         return super.putToLocalStorage(type, key, value);
     }
 
-    @Nullable
     @Override
     public <K, V, N extends IdentifierNamespace<K, V>> V getFromLocalStorage(final Class<N> type, final K key) {
         return getFromLocalStorage(type, key, new HashSet<>());
@@ -148,9 +146,8 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
      * We need to track already checked RootStatementContexts due to possible
      * circular chains of includes between submodules
      */
-    @Nullable
-    private <K, V, N extends IdentifierNamespace<K, V>> V getFromLocalStorage(final Class<N> type, final K key,
-            final HashSet<RootStatementContext<?, ?, ?>> alreadyChecked) {
+    private <K, V, N extends IdentifierNamespace<K, V>> @Nullable V getFromLocalStorage(final Class<N> type,
+            final K key, final HashSet<RootStatementContext<?, ?, ?>> alreadyChecked) {
         final V potentialLocal = super.getFromLocalStorage(type, key);
         if (potentialLocal != null) {
             return potentialLocal;
@@ -169,7 +166,6 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
         return null;
     }
 
-    @Nullable
     @Override
     public <K, V, N extends IdentifierNamespace<K, V>> Map<K, V> getAllFromLocalStorage(final Class<N> type) {
         return getAllFromLocalStorage(type, new HashSet<>());
@@ -179,8 +175,7 @@ public class RootStatementContext<A, D extends DeclaredStatement<A>, E extends E
      * We need to track already checked RootStatementContexts due to possible
      * circular chains of includes between submodules
      */
-    @Nullable
-    private <K, V, N extends IdentifierNamespace<K, V>> Map<K, V> getAllFromLocalStorage(final Class<N> type,
+    private <K, V, N extends IdentifierNamespace<K, V>> @Nullable Map<K, V> getAllFromLocalStorage(final Class<N> type,
             final HashSet<RootStatementContext<?, ?, ?>> alreadyChecked) {
         final Map<K, V> potentialLocal = super.getAllFromLocalStorage(type);
         if (potentialLocal != null) {

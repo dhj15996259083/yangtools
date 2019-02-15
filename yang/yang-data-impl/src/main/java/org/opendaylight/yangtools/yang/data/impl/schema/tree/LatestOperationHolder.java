@@ -7,6 +7,8 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * Holder and factory for upgradable root modifications.
  *
@@ -15,7 +17,7 @@ package org.opendaylight.yangtools.yang.data.impl.schema.tree;
  */
 final class LatestOperationHolder {
 
-    private ModificationApplyOperation current = AlwaysFailOperation.INSTANCE;
+    private ModificationApplyOperation current;
 
     /**
      * Return latest backing implementation.
@@ -27,29 +29,29 @@ final class LatestOperationHolder {
     }
 
     /**
-     * Sets latest backing implementation of associated {@link RootModificationApplyOperation}.
+     * Sets latest backing implementation of associated {@link RootApplyStrategy}.
      *
      * <p>
      * Note: This does not result in upgrading implementation of already existing
-     * {@link RootModificationApplyOperation}. Users, who obtained instances using {@link #newSnapshot()}, deriving
-     * {@link RootModificationApplyOperation} from this modification must explicitly invoke
-     * {@link RootModificationApplyOperation#upgradeIfPossible()} on their instance to be updated to latest backing
+     * {@link RootApplyStrategy}. Users, who obtained instances using {@link #newSnapshot()}, deriving
+     * {@link RootApplyStrategy} from this modification must explicitly invoke
+     * {@link RootApplyStrategy#upgradeIfPossible()} on their instance to be updated to latest backing
      * implementation.
      *
      * @param newApplyOper New backing implementation
      */
     void setCurrent(final ModificationApplyOperation newApplyOper) {
-        current = newApplyOper;
+        current = requireNonNull(newApplyOper);
     }
 
     /**
-     * Creates new upgradable {@link RootModificationApplyOperation} associated with holder.
+     * Creates new upgradable {@link RootApplyStrategy} associated with holder.
      *
-     * @return New upgradable {@link RootModificationApplyOperation} with {@link #getCurrent()} used
+     * @return New upgradable {@link RootApplyStrategy} with {@link #getCurrent()} used
      *         as the backing implementation.
      */
-    RootModificationApplyOperation newSnapshot() {
-        return new UpgradableModificationApplyOperation(this, current);
+    RootApplyStrategy newSnapshot() {
+        return new UpgradableRootApplyStrategy(this, current);
     }
 
 }

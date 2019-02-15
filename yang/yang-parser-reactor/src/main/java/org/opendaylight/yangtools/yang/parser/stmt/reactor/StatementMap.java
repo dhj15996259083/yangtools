@@ -10,7 +10,6 @@ package org.opendaylight.yangtools.yang.parser.stmt.reactor;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.ImmutableList;
 import java.util.AbstractCollection;
@@ -18,8 +17,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.function.Consumer;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 
 /**
  * Simple integer-to-StatementContextBase map optimized for size and restricted in scope of operations. It does not
@@ -87,11 +86,7 @@ abstract class StatementMap {
 
         @Override
         StatementContextBase<?, ?, ?> get(final int index) {
-            if (index >= elements.length) {
-                return null;
-            }
-
-            return elements[index];
+            return index >= elements.length ? null : elements[index];
         }
 
         @Override
@@ -110,7 +105,7 @@ abstract class StatementMap {
 
         @Override
         Collection<StatementContextBase<?, ?, ?>> values() {
-            return new RegularAsCollection<>(elements);
+            return new RegularAsCollection<>(elements, size);
         }
 
         @Override
@@ -134,10 +129,11 @@ abstract class StatementMap {
 
     private static final class RegularAsCollection<T> extends AbstractCollection<T> {
         private final T[] elements;
-        private int size;
+        private final int size;
 
-        RegularAsCollection(final T[] elements) {
-            this.elements = Preconditions.checkNotNull(elements);
+        RegularAsCollection(final T[] elements, final int size) {
+            this.elements = requireNonNull(elements);
+            this.size = size;
         }
 
         @Override
@@ -147,11 +143,6 @@ abstract class StatementMap {
                     action.accept(e);
                 }
             }
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return size != 0;
         }
 
         @Override
@@ -240,7 +231,7 @@ abstract class StatementMap {
      * @return New statement map
      * @throws IllegalArgumentException if the index is already occupied
      */
-    abstract @Nonnull StatementMap put(int index, @Nonnull StatementContextBase<?, ?, ?> obj);
+    abstract @NonNull StatementMap put(int index, @NonNull StatementContextBase<?, ?, ?> obj);
 
     /**
      * Return a read-only view of the elements in this map. Unlike other maps, this view does not detect concurrent
@@ -249,11 +240,11 @@ abstract class StatementMap {
      *
      * @return Read-only view of available statements.
      */
-    abstract @Nonnull Collection<StatementContextBase<?, ?, ?>> values();
+    abstract @NonNull Collection<StatementContextBase<?, ?, ?>> values();
 
     abstract int size();
 
-    abstract StatementMap ensureCapacity(int expectedLimit);
+    abstract @NonNull StatementMap ensureCapacity(int expectedLimit);
 
     abstract int capacity();
 }

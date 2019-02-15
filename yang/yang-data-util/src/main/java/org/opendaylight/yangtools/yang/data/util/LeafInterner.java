@@ -11,14 +11,17 @@ import com.google.common.annotations.Beta;
 import com.google.common.collect.Interner;
 import com.google.common.collect.Interners;
 import java.util.Objects;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.yangtools.yang.data.api.schema.LeafNode;
 import org.opendaylight.yangtools.yang.model.api.LeafSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.TypeDefinition;
 import org.opendaylight.yangtools.yang.model.api.type.BooleanTypeDefinition;
+import org.opendaylight.yangtools.yang.model.api.type.EmptyTypeDefinition;
 import org.opendaylight.yangtools.yang.model.api.type.EnumTypeDefinition;
 import org.opendaylight.yangtools.yang.model.api.type.IdentityrefTypeDefinition;
+import org.opendaylight.yangtools.yang.model.api.type.Int8TypeDefinition;
+import org.opendaylight.yangtools.yang.model.api.type.Uint8TypeDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,15 +67,20 @@ public final class LeafInterner {
      * @param schema The leaf node's schema
      * @return An interner instance
      */
-    @Nonnull public static <T extends LeafNode<?>> Interner<T> forSchema(@Nullable final LeafSchemaNode schema) {
-        if (schema != null) {
-            final TypeDefinition<?> type = schema.getType();
-            if (type instanceof BooleanTypeDefinition || type instanceof EnumTypeDefinition
-                    || type instanceof IdentityrefTypeDefinition) {
-                return LeafInterner::intern;
-            }
+    @NonNull public static <T extends LeafNode<?>> Interner<T> forSchema(final @Nullable LeafSchemaNode schema) {
+        if (schema != null && isLowCardinality(schema.getType())) {
+            return LeafInterner::intern;
         }
 
         return Objects::requireNonNull;
+    }
+
+    private static boolean isLowCardinality(final TypeDefinition<?> type) {
+        return type instanceof BooleanTypeDefinition
+                || type instanceof EmptyTypeDefinition
+                || type instanceof EnumTypeDefinition
+                || type instanceof IdentityrefTypeDefinition
+                || type instanceof Int8TypeDefinition
+                || type instanceof Uint8TypeDefinition;
     }
 }

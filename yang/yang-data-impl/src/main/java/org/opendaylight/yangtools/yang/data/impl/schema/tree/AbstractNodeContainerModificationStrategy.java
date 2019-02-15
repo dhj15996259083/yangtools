@@ -8,15 +8,20 @@
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
 
-import com.google.common.base.Preconditions;
+import com.google.common.base.MoreObjects;
+import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Verify;
 import java.util.Collection;
 import java.util.Optional;
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.PathArgument;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNodeContainer;
+import org.opendaylight.yangtools.yang.data.api.schema.tree.ConflictingModificationAppliedException;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTreeConfiguration;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataValidationFailedException;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.ModificationType;
@@ -27,60 +32,144 @@ import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.TreeNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.TreeNodeFactory;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.Version;
 import org.opendaylight.yangtools.yang.data.impl.schema.builder.api.NormalizedNodeContainerBuilder;
+import org.opendaylight.yangtools.yang.model.api.DocumentedNode.WithStatus;
 
-abstract class AbstractNodeContainerModificationStrategy extends SchemaAwareApplyOperation {
+abstract class AbstractNodeContainerModificationStrategy<T extends WithStatus>
+        extends SchemaAwareApplyOperation<T> {
+    abstract static class Invisible<T extends WithStatus> extends AbstractNodeContainerModificationStrategy<T> {
+        private final @NonNull SchemaAwareApplyOperation<T> entryStrategy;
 
-    private final Class<? extends NormalizedNode<?, ?>> nodeClass;
+        Invisible(final NormalizedNodeContainerSupport<?, ?> support, final DataTreeConfiguration treeConfig,
+                final SchemaAwareApplyOperation<T> entryStrategy) {
+            super(support, treeConfig);
+            this.entryStrategy = requireNonNull(entryStrategy);
+        }
+
+        @Override
+        final T getSchema() {
+            return entryStrategy.getSchema();
+        }
+
+        final Optional<ModificationApplyOperation> entryStrategy() {
+            return Optional.of(entryStrategy);
+        }
+
+        @Override
+        ToStringHelper addToStringAttributes(final ToStringHelper helper) {
+            return super.addToStringAttributes(helper).add("entry", entryStrategy);
+        }
+    }
+
+    abstract static class Visible<T extends WithStatus> extends AbstractNodeContainerModificationStrategy<T> {
+        private final @NonNull T schema;
+
+        Visible(final NormalizedNodeContainerSupport<?, ?> support, final DataTreeConfiguration treeConfig,
+            final T schema) {
+            super(support, treeConfig);
+            this.schema = requireNonNull(schema);
+        }
+
+        @Override
+        final T getSchema() {
+            return schema;
+        }
+
+        @Override
+        ToStringHelper addToStringAttributes(final ToStringHelper helper) {
+            return super.addToStringAttributes(helper).add("schema", schema);
+        }
+    }
+
+    /**
+     * Fake TreeNode version used in
+     * {@link #checkTouchApplicable(ModificationPath, NodeModification, Optional, Version)}
+     * It is okay to use a global constant, as the delegate will ignore it anyway.
+     */
+    private static final Version FAKE_VERSION = Version.initial();
+
+    private final NormalizedNodeContainerSupport<?, ?> support;
     private final boolean verifyChildrenStructure;
 
-    protected AbstractNodeContainerModificationStrategy(final Class<? extends NormalizedNode<?, ?>> nodeClass,
+    AbstractNodeContainerModificationStrategy(final NormalizedNodeContainerSupport<?, ?> support,
             final DataTreeConfiguration treeConfig) {
-        this.nodeClass = Preconditions.checkNotNull(nodeClass , "nodeClass");
+        this.support = requireNonNull(support);
         this.verifyChildrenStructure = treeConfig.getTreeType() == TreeType.CONFIGURATION;
     }
 
     @Override
-    void verifyStructure(final NormalizedNode<?, ?> writtenValue, final boolean verifyChildren) {
+    protected final ChildTrackingPolicy getChildPolicy() {
+        return support.childPolicy;
+    }
+
+    @Override
+    final void verifyValue(final NormalizedNode<?, ?> writtenValue) {
+        final Class<?> nodeClass = support.requiredClass;
         checkArgument(nodeClass.isInstance(writtenValue), "Node %s is not of type %s", writtenValue, nodeClass);
         checkArgument(writtenValue instanceof NormalizedNodeContainer);
-        if (verifyChildrenStructure && verifyChildren) {
+    }
+
+    @Override
+    final void verifyValueChildren(final NormalizedNode<?, ?> writtenValue) {
+        if (verifyChildrenStructure) {
             final NormalizedNodeContainer<?, ?, ?> container = (NormalizedNodeContainer<?, ?, ?>) writtenValue;
             for (final Object child : container.getValue()) {
                 checkArgument(child instanceof NormalizedNode);
                 final NormalizedNode<?, ?> castedChild = (NormalizedNode<?, ?>) child;
                 final Optional<ModificationApplyOperation> childOp = getChild(castedChild.getIdentifier());
                 if (childOp.isPresent()) {
-                    childOp.get().verifyStructure(castedChild, verifyChildren);
+                    childOp.get().fullVerifyStructure(castedChild);
                 } else {
                     throw new SchemaValidationFailedException(String.format(
                             "Node %s is not a valid child of %s according to the schema.",
                             castedChild.getIdentifier(), container.getIdentifier()));
                 }
             }
+
+            optionalVerifyValueChildren(writtenValue);
         }
+        mandatoryVerifyValueChildren(writtenValue);
+    }
+
+    /**
+     * Perform additional verification on written value's child structure, like presence of mandatory children and
+     * exclusion. The default implementation does nothing and is not invoked for non-CONFIG data trees.
+     *
+     * @param writtenValue Effective written value
+     */
+    void optionalVerifyValueChildren(final NormalizedNode<?, ?> writtenValue) {
+        // Defaults to no-op
+    }
+
+    /**
+     * Perform additional verification on written value's child structure, like presence of mandatory children.
+     * The default implementation does nothing.
+     *
+     * @param writtenValue Effective written value
+     */
+    void mandatoryVerifyValueChildren(final NormalizedNode<?, ?> writtenValue) {
+        // Defaults to no-op
     }
 
     @Override
-    protected void recursivelyVerifyStructure(final NormalizedNode<?, ?> value) {
+    protected final void recursivelyVerifyStructure(final NormalizedNode<?, ?> value) {
         final NormalizedNodeContainer<?, ?, ?> container = (NormalizedNodeContainer<?, ?, ?>) value;
         for (final Object child : container.getValue()) {
             checkArgument(child instanceof NormalizedNode);
             final NormalizedNode<?, ?> castedChild = (NormalizedNode<?, ?>) child;
             final Optional<ModificationApplyOperation> childOp = getChild(castedChild.getIdentifier());
-            if (childOp.isPresent()) {
-                childOp.get().recursivelyVerifyStructure(castedChild);
-            } else {
+            if (!childOp.isPresent()) {
                 throw new SchemaValidationFailedException(
                     String.format("Node %s is not a valid child of %s according to the schema.",
                         castedChild.getIdentifier(), container.getIdentifier()));
             }
+
+            childOp.get().recursivelyVerifyStructure(castedChild);
         }
     }
 
     @Override
-    protected TreeNode applyWrite(final ModifiedNode modification,
+    protected TreeNode applyWrite(final ModifiedNode modification, final NormalizedNode<?, ?> newValue,
             final Optional<TreeNode> currentMeta, final Version version) {
-        final NormalizedNode<?, ?> newValue = modification.getWrittenValue();
         final TreeNode newValueMeta = TreeNodeFactory.createTreeNode(newValue, version);
 
         if (modification.getChildren().isEmpty()) {
@@ -107,7 +196,7 @@ abstract class AbstractNodeContainerModificationStrategy extends SchemaAwareAppl
         mutable.setSubtreeVersion(version);
 
         @SuppressWarnings("rawtypes")
-        final NormalizedNodeContainerBuilder dataBuilder = createBuilder(newValue);
+        final NormalizedNodeContainerBuilder dataBuilder = support.createBuilder(newValue);
         final TreeNode result = mutateChildren(mutable, dataBuilder, version, modification.getChildren());
 
         // We are good to go except one detail: this is a single logical write, but
@@ -198,7 +287,7 @@ abstract class AbstractNodeContainerModificationStrategy extends SchemaAwareAppl
                 // order of operation - parent changes are always resolved before
                 // children ones, and having node in TOUCH means children was modified
                 // before.
-                modification.updateValue(LogicalOperation.MERGE, createEmptyValue(value));
+                modification.updateValue(LogicalOperation.MERGE, support.createEmptyValue(value));
                 return;
             case MERGE:
                 // Merging into an existing node. Merge data children modifications (maybe recursively) and mark
@@ -245,7 +334,7 @@ abstract class AbstractNodeContainerModificationStrategy extends SchemaAwareAppl
         final Collection<ModifiedNode> children = modification.getChildren();
         if (!children.isEmpty()) {
             @SuppressWarnings("rawtypes")
-            final NormalizedNodeContainerBuilder dataBuilder = createBuilder(currentMeta.getData());
+            final NormalizedNodeContainerBuilder dataBuilder = support.createBuilder(currentMeta.getData());
             final MutableTreeNode newMeta = currentMeta.mutable();
             newMeta.setSubtreeVersion(version);
             final TreeNode ret = mutateChildren(newMeta, dataBuilder, version, children);
@@ -274,16 +363,49 @@ abstract class AbstractNodeContainerModificationStrategy extends SchemaAwareAppl
     }
 
     @Override
-    protected void checkTouchApplicable(final ModificationPath path, final NodeModification modification,
+    protected final void checkTouchApplicable(final ModificationPath path, final NodeModification modification,
             final Optional<TreeNode> current, final Version version) throws DataValidationFailedException {
-        if (!modification.getOriginal().isPresent() && !current.isPresent()) {
-            final YangInstanceIdentifier id = path.toInstanceIdentifier();
-            throw new ModifiedNodeDoesNotExistException(id,
-                String.format("Node %s does not exist. Cannot apply modification to its children.", id));
+        final TreeNode currentNode;
+        if (!current.isPresent()) {
+            currentNode = defaultTreeNode();
+            if (currentNode == null) {
+                if (!modification.getOriginal().isPresent()) {
+                    final YangInstanceIdentifier id = path.toInstanceIdentifier();
+                    throw new ModifiedNodeDoesNotExistException(id,
+                        String.format("Node %s does not exist. Cannot apply modification to its children.", id));
+                }
+
+                throw new ConflictingModificationAppliedException(path.toInstanceIdentifier(),
+                    "Node was deleted by other transaction.");
+            }
+        } else {
+            currentNode = current.get();
         }
 
-        checkConflicting(path, current.isPresent(), "Node was deleted by other transaction.");
-        checkChildPreconditions(path, modification, current.get(), version);
+        checkChildPreconditions(path, modification, currentNode, version);
+    }
+
+    /**
+     * Return the default tree node. Default implementation does nothing, but can be overridden to call
+     * {@link #defaultTreeNode(NormalizedNode)}.
+     *
+     * @return Default empty tree node, or null if no default is available
+     */
+    @Nullable TreeNode defaultTreeNode() {
+        // Defaults to no recovery
+        return null;
+    }
+
+    static final TreeNode defaultTreeNode(final NormalizedNode<?, ?> emptyNode) {
+        return TreeNodeFactory.createTreeNode(emptyNode, FAKE_VERSION);
+    }
+
+    @Override
+    protected final void checkMergeApplicable(final ModificationPath path, final NodeModification modification,
+            final Optional<TreeNode> current, final Version version) throws DataValidationFailedException {
+        if (current.isPresent()) {
+            checkChildPreconditions(path, modification, current.get(), version);
+        }
     }
 
     /**
@@ -309,19 +431,11 @@ abstract class AbstractNodeContainerModificationStrategy extends SchemaAwareAppl
     }
 
     @Override
-    protected void checkMergeApplicable(final ModificationPath path, final NodeModification modification,
-            final Optional<TreeNode> current, final Version version) throws DataValidationFailedException {
-        if (current.isPresent()) {
-            checkChildPreconditions(path, modification, current.get(), version);
-        }
+    public final String toString() {
+        return addToStringAttributes(MoreObjects.toStringHelper(this)).toString();
     }
 
-    protected boolean verifyChildrenStructure() {
-        return verifyChildrenStructure;
+    ToStringHelper addToStringAttributes(final ToStringHelper helper) {
+        return helper.add("support", support).add("verifyChildren", verifyChildrenStructure);
     }
-
-    @SuppressWarnings("rawtypes")
-    protected abstract NormalizedNodeContainerBuilder createBuilder(NormalizedNode<?, ?> original);
-
-    protected abstract NormalizedNode<?, ?> createEmptyValue(NormalizedNode<?, ?> original);
 }

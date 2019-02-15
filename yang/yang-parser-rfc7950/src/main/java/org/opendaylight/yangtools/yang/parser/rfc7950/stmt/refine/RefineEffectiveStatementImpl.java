@@ -12,7 +12,6 @@ import static com.google.common.base.Verify.verifyNotNull;
 import com.google.common.collect.ImmutableList;
 import java.util.List;
 import java.util.stream.Collectors;
-import javax.annotation.Nonnull;
 import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.model.api.SchemaNode;
@@ -31,7 +30,7 @@ public final class RefineEffectiveStatementImpl
 
     private final @NonNull QName qname;
     private final @NonNull SchemaPath path;
-    private final @NonNull List<UnknownSchemaNode> unknownNodes;
+    private final @NonNull ImmutableList<UnknownSchemaNode> unknownNodes;
     private final SchemaNode refineTargetNode;
 
     RefineEffectiveStatementImpl(final StmtContext<SchemaNodeIdentifier, RefineStatement, ?> ctx) {
@@ -51,13 +50,11 @@ public final class RefineEffectiveStatementImpl
         return refineTargetNode;
     }
 
-    @Nonnull
     @Override
     public QName getQName() {
         return qname;
     }
 
-    @Nonnull
     @Override
     public SchemaPath getPath() {
         return path;

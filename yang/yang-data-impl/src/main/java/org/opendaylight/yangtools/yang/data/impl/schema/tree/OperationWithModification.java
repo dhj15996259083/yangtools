@@ -7,7 +7,8 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.tree;
 
-import com.google.common.base.Preconditions;
+import static java.util.Objects.requireNonNull;
+
 import java.util.Optional;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.PathArgument;
 import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
@@ -19,8 +20,8 @@ final class OperationWithModification {
     private final ModifiedNode modification;
 
     private OperationWithModification(final ModificationApplyOperation op, final ModifiedNode mod) {
-        this.applyOperation = Preconditions.checkNotNull(op);
-        this.modification = Preconditions.checkNotNull(mod);
+        this.applyOperation = requireNonNull(op);
+        this.modification = requireNonNull(mod);
     }
 
     void write(final NormalizedNode<?, ?> value) {
@@ -28,7 +29,7 @@ final class OperationWithModification {
         /**
          * Fast validation of structure, full validation on written data will be run during seal.
          */
-        applyOperation.verifyStructure(value, false);
+        applyOperation.quickVerifyStructure(value);
     }
 
     void merge(final NormalizedNode<?, ?> data, final Version version) {
@@ -42,7 +43,7 @@ final class OperationWithModification {
          * We perform only quick validation here, full validation will be applied as-needed during
          * preparation, as the merge is reconciled with current state.
          */
-        applyOperation.verifyStructure(data, false);
+        applyOperation.quickVerifyStructure(data);
         applyOperation.mergeIntoModifiedNode(modification, data, version);
     }
 

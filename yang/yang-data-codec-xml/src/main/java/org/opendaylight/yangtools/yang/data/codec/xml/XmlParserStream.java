@@ -13,11 +13,9 @@ import static java.util.Objects.requireNonNull;
 
 import com.google.common.annotations.Beta;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.xml.XmlEscapers;
 import java.io.Closeable;
 import java.io.Flushable;
 import java.io.IOException;
-import java.io.StringReader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.AbstractMap.SimpleImmutableEntry;
@@ -35,9 +33,14 @@ import javax.xml.stream.Location;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
+import javax.xml.stream.util.StreamReaderDelegate;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.TransformerFactoryConfigurationError;
+import javax.xml.transform.dom.DOMResult;
 import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stax.StAXSource;
 import org.opendaylight.yangtools.odlext.model.api.YangModeledAnyXmlSchemaNode;
-import org.opendaylight.yangtools.util.xml.UntrustedXML;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.data.api.schema.stream.NormalizedNodeStreamWriter;
 import org.opendaylight.yangtools.yang.data.util.AbstractNodeDataWithSchema;
@@ -49,8 +52,8 @@ import org.opendaylight.yangtools.yang.data.util.LeafListNodeDataWithSchema;
 import org.opendaylight.yangtools.yang.data.util.LeafNodeDataWithSchema;
 import org.opendaylight.yangtools.yang.data.util.ListEntryNodeDataWithSchema;
 import org.opendaylight.yangtools.yang.data.util.ListNodeDataWithSchema;
+import org.opendaylight.yangtools.yang.data.util.OperationAsContainer;
 import org.opendaylight.yangtools.yang.data.util.ParserStreamUtils;
-import org.opendaylight.yangtools.yang.data.util.RpcAsContainer;
 import org.opendaylight.yangtools.yang.data.util.SimpleNodeDataWithSchema;
 import org.opendaylight.yangtools.yang.data.util.YangModeledAnyXmlNodeDataWithSchema;
 import org.opendaylight.yangtools.yang.model.api.AnyXmlSchemaNode;
@@ -59,12 +62,13 @@ import org.opendaylight.yangtools.yang.model.api.DataSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.LeafListSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.LeafSchemaNode;
 import org.opendaylight.yangtools.yang.model.api.ListSchemaNode;
-import org.opendaylight.yangtools.yang.model.api.RpcDefinition;
+import org.opendaylight.yangtools.yang.model.api.OperationDefinition;
 import org.opendaylight.yangtools.yang.model.api.SchemaContext;
 import org.opendaylight.yangtools.yang.model.api.SchemaNode;
 import org.opendaylight.yangtools.yang.model.api.TypedDataSchemaNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
-import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 /**
@@ -75,6 +79,27 @@ import org.xml.sax.SAXException;
 @Beta
 @NotThreadSafe
 public final class XmlParserStream implements Closeable, Flushable {
+    private static final Logger LOG = LoggerFactory.getLogger(XmlParserStream.class);
+    private static final String XML_STANDARD_VERSION = "1.0";
+    private static final String COM_SUN_TRANSFORMER =
+            "com.sun.org.apache.xalan.internal.xsltc.trax.TransformerFactoryImpl";
+
+    private static final TransformerFactory TRANSFORMER_FACTORY;
+
+    static {
+        TransformerFactory fa = TransformerFactory.newInstance();
+        if (!fa.getFeature(StAXSource.FEATURE)) {
+            LOG.warn("Platform-default TransformerFactory {} does not support StAXSource, attempting fallback to {}",
+                    fa, COM_SUN_TRANSFORMER);
+            fa = TransformerFactory.newInstance(COM_SUN_TRANSFORMER, null);
+            if (!fa.getFeature(StAXSource.FEATURE)) {
+                throw new TransformerFactoryConfigurationError("No TransformerFactory supporting StAXResult found.");
+            }
+        }
+
+        TRANSFORMER_FACTORY = fa;
+    }
+
     private final NormalizedNodeStreamWriter writer;
     private final XmlCodecFactory codecs;
     private final DataSchemaNode parentNode;
@@ -115,11 +140,15 @@ public final class XmlParserStream implements Closeable, Flushable {
      */
     public static XmlParserStream create(final NormalizedNodeStreamWriter writer, final XmlCodecFactory codecs,
             final SchemaNode parentNode, final boolean strictParsing) {
-        if (parentNode instanceof RpcDefinition) {
-            return new XmlParserStream(writer, codecs, new RpcAsContainer((RpcDefinition) parentNode), strictParsing);
+        final DataSchemaNode parent;
+        if (parentNode instanceof DataSchemaNode) {
+            parent = (DataSchemaNode) parentNode;
+        } else if (parentNode instanceof OperationDefinition) {
+            parent = OperationAsContainer.of((OperationDefinition) parentNode);
+        } else {
+            throw new IllegalArgumentException("Illegal parent node " + parentNode);
         }
-        checkArgument(parentNode instanceof DataSchemaNode, "Instance of DataSchemaNode class awaited.");
-        return new XmlParserStream(writer, codecs, (DataSchemaNode) parentNode, strictParsing);
+        return new XmlParserStream(writer, codecs, parent, strictParsing);
     }
 
     /**
@@ -216,7 +245,7 @@ public final class XmlParserStream implements Closeable, Flushable {
         return parse(new DOMSourceXMLStreamReader(src));
     }
 
-    private static Map<QName, String> getElementAttributes(final XMLStreamReader in) {
+    private static ImmutableMap<QName, String> getElementAttributes(final XMLStreamReader in) {
         checkState(in.isStartElement(), "Attributes can be extracted only from START_ELEMENT.");
         final Map<QName, String> attributes = new LinkedHashMap<>();
 
@@ -239,33 +268,33 @@ public final class XmlParserStream implements Closeable, Flushable {
         return ImmutableMap.copyOf(attributes);
     }
 
-    private static String readAnyXmlValue(final XMLStreamReader in) throws XMLStreamException {
-        final StringBuilder sb = new StringBuilder();
-        final String anyXmlElementName = in.getLocalName();
-        sb.append('<').append(anyXmlElementName).append(" xmlns=\"").append(in.getNamespaceURI()).append("\">");
-
-        while (in.hasNext()) {
-            final int eventType = in.next();
-
-            if (eventType == XMLStreamConstants.START_ELEMENT) {
-                sb.append('<').append(in.getLocalName()).append('>');
-            } else if (eventType == XMLStreamConstants.END_ELEMENT) {
-                sb.append("</").append(in.getLocalName()).append('>');
-
-                if (in.getLocalName().equals(anyXmlElementName)) {
-                    break;
+    private static Document readAnyXmlValue(final XMLStreamReader in) throws XMLStreamException {
+        // Underlying reader might return null when asked for version, however when such reader is plugged into
+        // Stax -> DOM transformer, it fails with NPE due to null version. Use default xml version in such case.
+        final XMLStreamReader inWrapper;
+        if (in.getVersion() == null) {
+            inWrapper = new StreamReaderDelegate(in) {
+                @Override
+                public String getVersion() {
+                    final String ver = super.getVersion();
+                    return ver != null ? ver : XML_STANDARD_VERSION;
                 }
-
-            } else if (eventType == XMLStreamConstants.CHARACTERS) {
-                sb.append(XmlEscapers.xmlContentEscaper().escape(in.getText()));
-            }
+            };
+        } else {
+            inWrapper = in;
         }
 
-        return sb.toString();
+        final DOMResult result = new DOMResult();
+        try {
+            TRANSFORMER_FACTORY.newTransformer().transform(new StAXSource(inWrapper), result);
+        } catch (final TransformerException e) {
+            throw new XMLStreamException("Unable to read anyxml value", e);
+        }
+        return (Document) result.getNode();
     }
 
     private void read(final XMLStreamReader in, final AbstractNodeDataWithSchema parent, final String rootElement)
-            throws XMLStreamException, URISyntaxException, SAXException, IOException {
+            throws XMLStreamException, URISyntaxException {
         if (!in.hasNext()) {
             return;
         }
@@ -385,7 +414,7 @@ public final class XmlParserStream implements Closeable, Flushable {
     }
 
     private static boolean isNextEndDocument(final XMLStreamReader in) throws XMLStreamException {
-        return in.next() == XMLStreamConstants.END_DOCUMENT;
+        return !in.hasNext() || in.next() == XMLStreamConstants.END_DOCUMENT;
     }
 
     private static boolean isAtElement(final XMLStreamReader in) {
@@ -421,8 +450,9 @@ public final class XmlParserStream implements Closeable, Flushable {
         in.nextTag();
     }
 
-    private void setValue(final AbstractNodeDataWithSchema parent, final String value, final NamespaceContext nsContext)
-            throws SAXException, IOException {
+
+    private void setValue(final AbstractNodeDataWithSchema parent, final Object value,
+            final NamespaceContext nsContext) {
         checkArgument(parent instanceof SimpleNodeDataWithSchema, "Node %s is not a simple type",
                 parent.getSchema().getQName());
         final SimpleNodeDataWithSchema parentSimpleNode = (SimpleNodeDataWithSchema) parent;
@@ -432,22 +462,22 @@ public final class XmlParserStream implements Closeable, Flushable {
         parentSimpleNode.setValue(translateValueByType(value, parentSimpleNode.getSchema(), nsContext));
     }
 
-    private Object translateValueByType(final String value, final DataSchemaNode node,
-            final NamespaceContext namespaceCtx) throws IOException, SAXException {
+    private Object translateValueByType(final Object value, final DataSchemaNode node,
+            final NamespaceContext namespaceCtx) {
         if (node instanceof AnyXmlSchemaNode) {
+
+            checkArgument(value instanceof Document);
             /*
              *  FIXME: Figure out some YANG extension dispatch, which will
              *  reuse JSON parsing or XML parsing - anyxml is not well-defined in
              * JSON.
              */
-            final Document doc = UntrustedXML.newDocumentBuilder().parse(new InputSource(new StringReader(value)));
-            doc.normalize();
-
-            return new DOMSource(doc.getDocumentElement());
+            return new DOMSource(((Document) value).getDocumentElement());
         }
 
         checkArgument(node instanceof TypedDataSchemaNode);
-        return codecs.codecFor((TypedDataSchemaNode) node).parseValue(namespaceCtx, value);
+        checkArgument(value instanceof String);
+        return codecs.codecFor((TypedDataSchemaNode) node).parseValue(namespaceCtx, (String) value);
     }
 
     private static AbstractNodeDataWithSchema newEntryNode(final AbstractNodeDataWithSchema parent) {

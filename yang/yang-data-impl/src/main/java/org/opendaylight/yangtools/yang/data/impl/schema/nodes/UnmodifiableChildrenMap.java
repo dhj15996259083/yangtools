@@ -7,7 +7,8 @@
  */
 package org.opendaylight.yangtools.yang.data.impl.schema.nodes;
 
-import com.google.common.base.Preconditions;
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.collect.ImmutableMap;
 import java.io.Serializable;
 import java.util.Collection;
@@ -15,7 +16,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.Nonnull;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier.PathArgument;
 import org.opendaylight.yangtools.yang.data.api.schema.DataContainerChild;
 
@@ -35,7 +35,7 @@ final class UnmodifiableChildrenMap
     private transient Collection<DataContainerChild<? extends PathArgument, ?>> values;
 
     private UnmodifiableChildrenMap(final Map<PathArgument, DataContainerChild<? extends PathArgument, ?>> delegate) {
-        this.delegate = Preconditions.checkNotNull(delegate);
+        this.delegate = requireNonNull(delegate);
     }
 
     /**
@@ -115,7 +115,6 @@ final class UnmodifiableChildrenMap
         return Collections.unmodifiableSet(delegate.keySet());
     }
 
-    @Nonnull
     @Override
     public Collection<DataContainerChild<? extends PathArgument, ?>> values() {
         if (values == null) {

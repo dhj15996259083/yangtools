@@ -14,7 +14,6 @@ import org.opendaylight.yangtools.yang.data.api.schema.NormalizedNode;
 import org.opendaylight.yangtools.yang.data.api.schema.UnkeyedListEntryNode;
 import org.opendaylight.yangtools.yang.data.api.schema.UnkeyedListNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.DataTreeConfiguration;
-import org.opendaylight.yangtools.yang.data.api.schema.tree.DataValidationFailedException;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.IncorrectDataStructureException;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.MutableTreeNode;
 import org.opendaylight.yangtools.yang.data.api.schema.tree.spi.TreeNode;
@@ -25,26 +24,28 @@ import org.opendaylight.yangtools.yang.data.impl.schema.builder.api.NormalizedNo
 import org.opendaylight.yangtools.yang.data.impl.schema.builder.impl.ImmutableUnkeyedListEntryNodeBuilder;
 import org.opendaylight.yangtools.yang.model.api.ListSchemaNode;
 
-final class UnkeyedListModificationStrategy extends SchemaAwareApplyOperation {
+final class UnkeyedListModificationStrategy extends SchemaAwareApplyOperation<ListSchemaNode> {
+    private static final NormalizedNodeContainerSupport<NodeIdentifier, UnkeyedListEntryNode> ITEM_SUPPORT =
+            new NormalizedNodeContainerSupport<>(UnkeyedListEntryNode.class,
+                    ImmutableUnkeyedListEntryNodeBuilder::create, ImmutableUnkeyedListEntryNodeBuilder::create);
 
-    private final Optional<ModificationApplyOperation> entryStrategy;
+    private final DataNodeContainerModificationStrategy<ListSchemaNode> entryStrategy;
     private final UnkeyedListNode emptyNode;
 
     UnkeyedListModificationStrategy(final ListSchemaNode schema, final DataTreeConfiguration treeConfig) {
-        entryStrategy = Optional.of(new UnkeyedListItemModificationStrategy(schema, treeConfig));
+        entryStrategy = new DataNodeContainerModificationStrategy<>(ITEM_SUPPORT, schema, treeConfig);
         emptyNode = ImmutableNodes.listNode(schema.getQName());
+    }
+
+    @Override
+    ListSchemaNode getSchema() {
+        return entryStrategy.getSchema();
     }
 
     @Override
     Optional<TreeNode> apply(final ModifiedNode modification, final Optional<TreeNode> storeMeta,
             final Version version) {
-        return AutomaticLifecycleMixin.apply(super::apply, emptyNode, modification, storeMeta, version);
-    }
-
-    @Override
-    void checkApplicable(final ModificationPath path, final NodeModification modification,
-            final Optional<TreeNode> current, final Version version) throws DataValidationFailedException {
-        AutomaticLifecycleMixin.checkApplicable(super::checkApplicable, emptyNode, path, modification, current,
+        return AutomaticLifecycleMixin.apply(super::apply, this::applyWrite, emptyNode, modification, storeMeta,
             version);
     }
 
@@ -60,17 +61,14 @@ final class UnkeyedListModificationStrategy extends SchemaAwareApplyOperation {
     }
 
     @Override
-    protected TreeNode applyTouch(final ModifiedNode modification,
-            final TreeNode currentMeta, final Version version) {
+    protected TreeNode applyTouch(final ModifiedNode modification, final TreeNode currentMeta, final Version version) {
         throw new UnsupportedOperationException("UnkeyedList does not support subtree change.");
     }
 
     @Override
-    protected TreeNode applyWrite(final ModifiedNode modification,
+    protected TreeNode applyWrite(final ModifiedNode modification, final NormalizedNode<?, ?> newValue,
             final Optional<TreeNode> currentMeta, final Version version) {
-        final NormalizedNode<?, ?> newValue = modification.getWrittenValue();
         final TreeNode newValueMeta = TreeNodeFactory.createTreeNode(newValue, version);
-
         if (modification.getChildren().isEmpty()) {
             return newValueMeta;
         }
@@ -131,12 +129,12 @@ final class UnkeyedListModificationStrategy extends SchemaAwareApplyOperation {
 
     @Override
     public Optional<ModificationApplyOperation> getChild(final PathArgument child) {
-        return child instanceof NodeIdentifier ? entryStrategy : Optional.empty();
+        return child instanceof NodeIdentifier ? Optional.of(entryStrategy) : Optional.empty();
     }
 
     @Override
-    protected void verifyStructure(final NormalizedNode<?, ?> writtenValue, final boolean verifyChildren) {
-
+    void verifyValue(final NormalizedNode<?, ?> value) {
+        // NOOP
     }
 
     @Override

@@ -5,16 +5,13 @@
  * terms of the Eclipse Public License v1.0 which accompanies this distribution,
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
-
 package org.opendaylight.yangtools.yang.data.codec.xml;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
 import com.google.common.annotations.VisibleForTesting;
-import java.util.Map.Entry;
-import javax.annotation.Nonnull;
 import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
+import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yangtools.yang.common.QName;
 import org.opendaylight.yangtools.yang.common.QNameModule;
 import org.opendaylight.yangtools.yang.data.api.YangInstanceIdentifier;
@@ -35,15 +32,6 @@ import org.slf4j.LoggerFactory;
 abstract class XMLStreamWriterUtils {
     private static final Logger LOG = LoggerFactory.getLogger(XMLStreamWriterUtils.class);
 
-    @VisibleForTesting
-    static void writeAttribute(final XMLStreamWriter writer, final Entry<QName, String> attribute,
-                               final RandomPrefix randomPrefix) throws XMLStreamException {
-        final QName key = attribute.getKey();
-        final String prefix = randomPrefix.encodePrefix(key.getNamespace());
-        writer.writeAttribute("xmlns:" + prefix, key.getNamespace().toString());
-        writer.writeAttribute(prefix, key.getNamespace().toString(), key.getLocalName(), attribute.getValue());
-    }
-
     /**
      * Write a value into a XML stream writer. This method assumes the start and end of element is
      * emitted by the caller.
@@ -54,14 +42,8 @@ abstract class XMLStreamWriterUtils {
      * @param parent module QName owning the leaf definition
      * @throws XMLStreamException if an encoding problem occurs
      */
-    void writeValue(@Nonnull final XMLStreamWriter writer, @Nonnull final SchemaNode schemaNode,
-            final Object value, final QNameModule parent) throws XMLStreamException {
-        if (value == null) {
-            LOG.debug("Value of {}:{} is null, not encoding it", schemaNode.getQName().getNamespace(),
-                    schemaNode.getQName().getLocalName());
-            return;
-        }
-
+    void writeValue(final @NonNull ValueWriter writer, final @NonNull SchemaNode schemaNode,
+            final @NonNull Object value, final QNameModule parent) throws XMLStreamException {
         checkArgument(schemaNode instanceof TypedDataSchemaNode,
             "Unable to write value for node %s, only nodes of type: leaf and leaf-list can be written at this point",
             schemaNode.getQName());
@@ -84,40 +66,36 @@ abstract class XMLStreamWriterUtils {
      * @param parent optional parameter of a module QName owning the leaf definition
      * @throws XMLStreamException if an encoding problem occurs
      */
-    private void writeValue(@Nonnull final XMLStreamWriter writer, @Nonnull final TypeDefinition<?> type,
-            final Object value, final QNameModule parent) throws XMLStreamException {
-        if (value == null) {
-            LOG.debug("Value of {}:{} is null, not encoding it", type.getQName().getNamespace(),
-                    type.getQName().getLocalName());
-            return;
-        }
-
+    private void writeValue(final @NonNull ValueWriter writer, final @NonNull TypeDefinition<?> type,
+            final @NonNull Object value, final QNameModule parent) throws XMLStreamException {
         if (type instanceof IdentityrefTypeDefinition) {
             write(writer, (IdentityrefTypeDefinition) type, value, parent);
         } else if (type instanceof InstanceIdentifierTypeDefinition) {
             write(writer, (InstanceIdentifierTypeDefinition) type, value);
         } else {
-            final TypeDefinitionAwareCodec<Object, ?> codec = TypeDefinitionAwareCodec.from(type);
-            String text;
-            if (codec != null) {
-                try {
-                    text = codec.serialize(value);
-                } catch (ClassCastException e) {
-                    LOG.warn("Provided node value {} did not have type {} required by mapping. Using stream instead.",
-                            value, type, e);
-                    text = String.valueOf(value);
-                }
-            } else {
-                LOG.warn("Failed to find codec for {}, falling back to using stream", type);
-                text = String.valueOf(value);
-            }
-            writer.writeCharacters(text);
+            writer.writeCharacters(serialize(type, value));
+        }
+    }
+
+    private static String serialize(final @NonNull TypeDefinition<?> type, final @NonNull Object value) {
+        final TypeDefinitionAwareCodec<Object, ?> codec = TypeDefinitionAwareCodec.from(type);
+        if (codec == null) {
+            LOG.warn("Failed to find codec for {}, falling back to using stream", type);
+            return value.toString();
+        }
+
+        try {
+            return codec.serialize(value);
+        } catch (ClassCastException e) {
+            LOG.warn("Provided node value {} did not have type {} required by mapping. Using stream instead.",
+                value, type, e);
+            return value.toString();
         }
     }
 
     @VisibleForTesting
-    static void write(@Nonnull final XMLStreamWriter writer, @Nonnull final IdentityrefTypeDefinition type,
-                      @Nonnull final Object value, final QNameModule parent) throws XMLStreamException {
+    static void write(final @NonNull ValueWriter writer, final @NonNull IdentityrefTypeDefinition type,
+            final @NonNull Object value, final QNameModule parent) throws XMLStreamException {
         if (value instanceof QName) {
             final QName qname = (QName) value;
 
@@ -130,27 +108,29 @@ abstract class XMLStreamWriterUtils {
                 writer.writeNamespace(prefix, ns);
                 writer.writeCharacters(prefix + ':' + qname.getLocalName());
             }
-
         } else {
-            LOG.debug("Value of {}:{} is not a QName but {}", type.getQName().getNamespace(),
-                    type.getQName().getLocalName(), value.getClass());
-            writer.writeCharacters(String.valueOf(value));
+            final QName qname = type.getQName();
+            LOG.debug("Value of {}:{} is not a QName but {}", qname.getNamespace(), qname.getLocalName(),
+                value.getClass());
+            writer.writeToStringCharacters(value);
         }
     }
 
-    private void write(@Nonnull final XMLStreamWriter writer, @Nonnull final InstanceIdentifierTypeDefinition type,
-                       @Nonnull final Object value) throws XMLStreamException {
+    private void write(final @NonNull ValueWriter writer, final @NonNull InstanceIdentifierTypeDefinition type,
+            final @NonNull Object value) throws XMLStreamException {
         if (value instanceof YangInstanceIdentifier) {
             writeInstanceIdentifier(writer, (YangInstanceIdentifier)value);
         } else {
-            LOG.warn("Value of {}:{} is not an InstanceIdentifier but {}", type.getQName().getNamespace(),
-                    type.getQName().getLocalName(), value.getClass());
-            writer.writeCharacters(String.valueOf(value));
+            final QName qname = type.getQName();
+            LOG.warn("Value of {}:{} is not an InstanceIdentifier but {}", qname.getNamespace(), qname.getLocalName(),
+                value.getClass());
+            writer.writeToStringCharacters(value);
         }
     }
 
-    abstract TypeDefinition<?> getBaseTypeForLeafRef(SchemaNode schemaNode, LeafrefTypeDefinition type);
+    abstract @NonNull TypeDefinition<?> getBaseTypeForLeafRef(SchemaNode schemaNode,
+            @NonNull LeafrefTypeDefinition type);
 
-    abstract void writeInstanceIdentifier(XMLStreamWriter writer, YangInstanceIdentifier value)
+    abstract void writeInstanceIdentifier(@NonNull ValueWriter writer, YangInstanceIdentifier value)
             throws XMLStreamException;
 }

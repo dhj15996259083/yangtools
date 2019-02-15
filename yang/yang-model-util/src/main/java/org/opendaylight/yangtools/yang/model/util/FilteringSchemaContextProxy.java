@@ -7,6 +7,9 @@
  */
 package org.opendaylight.yangtools.yang.model.util;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
+
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Collections2;
@@ -39,14 +42,14 @@ import org.opendaylight.yangtools.yang.model.api.SchemaContext;
 
 @Immutable
 public final class FilteringSchemaContextProxy extends AbstractSchemaContext {
-    private final Map<QNameModule, Module> moduleMap;
+    private final ImmutableMap<QNameModule, Module> moduleMap;
 
     //collection to be filled with filtered modules
-    private final Set<Module> filteredModules;
+    private final ImmutableSet<Module> filteredModules;
 
     //collections to be filled in with filtered data
-    private final SetMultimap<URI, Module> namespaceToModules;
-    private final SetMultimap<String, Module> nameToModules;
+    private final ImmutableSetMultimap<URI, Module> namespaceToModules;
+    private final ImmutableSetMultimap<String, Module> nameToModules;
 
     /**
      * Filters SchemaContext for yang modules.
@@ -58,8 +61,8 @@ public final class FilteringSchemaContextProxy extends AbstractSchemaContext {
      */
     public FilteringSchemaContextProxy(final SchemaContext delegate, final Collection<ModuleId> rootModules,
             final Set<ModuleId> additionalModuleIds) {
-        Preconditions.checkNotNull(rootModules, "Base modules cannot be null.");
-        Preconditions.checkNotNull(additionalModuleIds, "Additional modules cannot be null.");
+        requireNonNull(rootModules, "Base modules cannot be null.");
+        requireNonNull(additionalModuleIds, "Additional modules cannot be null.");
 
         final Builder<Module> filteredModulesBuilder = new Builder<>();
 
@@ -207,10 +210,9 @@ public final class FilteringSchemaContextProxy extends AbstractSchemaContext {
         private final Revision rev;
 
         public ModuleId(final String name, final Optional<Revision> rev) {
-            Preconditions.checkArgument(!Strings.isNullOrEmpty(name),
-                    "No module dependency name given. Nothing to do.");
+            checkArgument(!Strings.isNullOrEmpty(name), "No module dependency name given. Nothing to do.");
             this.name = name;
-            Preconditions.checkArgument(rev.isPresent(), "No revision date given. Nothing to do.");
+            checkArgument(rev.isPresent(), "No revision date given. Nothing to do.");
             this.rev = rev.get();
         }
 
